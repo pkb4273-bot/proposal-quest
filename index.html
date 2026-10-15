@@ -82,7 +82,6 @@ h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(30px, 5vw
 .bubble p { margin: 0; }
 .bubble span { display: block; font-size: 12px; color: #66727f; margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) { .bubble { transition: none; } }
-.loading { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; background: rgba(14, 20, 30, .55); color: #ffffff; font-family: var(--f-display); font-size: 20px; text-align: center; padding: 24px; }
 .nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #1d2733; font-family: var(--f-display); font-size: 20px; }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 
@@ -270,8 +269,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/GammaCorrectionShader.js"></script>
@@ -306,34 +303,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   // ================= 3D 지도 =================
   const world = { ok: false };
   const mapEl = $("map");
-  function loadAssets(loadEl) {
-    const T = THREE, man = new T.LoadingManager();
-    man.onProgress = (u, a, b) => { loadEl.textContent = "지도를 불러오는 중… " + Math.round(a / b * 100) + "%"; };
-    const GL = new T.GLTFLoader(man), TL = new T.TextureLoader(man), RL = new T.RGBELoader(man), base = "assets/";
-    const g = u => new Promise((res, rej) => GL.load(base + u, res, undefined, rej));
-    const tx = u => new Promise((res, rej) => TL.load(base + u, t => { t.wrapS = t.wrapT = T.RepeatWrapping; t.anisotropy = 8; res(t); }, undefined, rej));
-    const set = id => Promise.all([tx(`tex/${id}/${id}_diff_1k.jpg`), tx(`tex/${id}/${id}_nor_gl_1k.jpg`)]).then(([diff, nor]) => ({ diff, nor }));
-    return Promise.all([
-      new Promise((res, rej) => RL.load(base + "env/sky_1k.hdr", res, undefined, rej)),
-      set("forrest_ground_01"), set("rocky_terrain_02"), set("snow_02"), set("dark_rock"), set("aerial_sand"), set("cobblestone_floor_01"),
-      g("chars/businessman.glb"), g("chars/farmer.glb"), g("chars/casual.glb"), g("chars/lis.glb"), g("chars/woman.glb"),
-      g("models/pines.glb"), g("models/tree.glb"), g("models/bushes.glb"), g("models/house1.glb"), g("models/house2.glb"), g("models/castle.glb"),
-      g("models/rock_moss_set_01/rock_moss_set_01_1k.gltf")
-    ]).then(r => {
-      const [sky, grass, rock, snow, dark, sand, path, businessman, farmer, casual, lis, woman, pines, tree, bushes, house1, house2, castle, mossRock] = r;
-      rock.diffS = rock.diff.clone(); rock.diffS.encoding = T.sRGBEncoding; rock.diffS.needsUpdate = true;
-      return { sky, tex: { grass, rock, snow, dark, sand, path }, businessman, farmer, casual, lis, woman, pines, tree, bushes, house1, house2, castle, mossRock };
-    });
-  }
   function initWorld() {
-    if (!window.THREE || !THREE.GLTFLoader || !THREE.RGBELoader) throw new Error("no three");
-    const loadEl = document.createElement("div"); loadEl.className = "loading"; loadEl.textContent = "지도를 불러오는 중…"; mapEl.appendChild(loadEl);
-    loadAssets(loadEl).then(AS => {
-      try { buildWorld(AS); loadEl.remove(); if (world.onReady) world.onReady(); }
-      catch (e) { console.error(e); loadEl.textContent = "이 화면에서는 3D 지도를 그릴 수 없어요. 기록은 아래에서 그대로 볼 수 있어요."; }
-    }, e => { console.error(e); loadEl.textContent = "지도 파일을 불러오지 못했어요. 새로고침해 주세요."; });
-  }
-  function buildWorld(AS) {
+    if (!window.THREE) throw new Error("no three");
     const T = THREE;
     if (T.ColorManagement) T.ColorManagement.legacyMode = false;
     const small = mapEl.clientWidth < 640;
@@ -346,28 +317,20 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const scene = new T.Scene();
     const camera = new T.PerspectiveCamera(40, 1, 0.4, 400);
 
-    // 후처리: 빛 번짐(블룸) + 영화식 톤매핑
+    // 후처리: 빛 번짐(블룸) + 감마 보정
     let composer = null, bloom = null;
     if (T.EffectComposer && T.RenderPass && T.UnrealBloomPass && T.ShaderPass && T.GammaCorrectionShader) {
       composer = new T.EffectComposer(renderer);
       composer.addPass(new T.RenderPass(scene, camera));
-      bloom = new T.UnrealBloomPass(new T.Vector2(512, 512), 0.45, 0.5, 1.7);
+      bloom = new T.UnrealBloomPass(new T.Vector2(512, 512), 0.55, 0.45, 1.05);
       composer.addPass(bloom);
-      composer.addPass(new T.ShaderPass({
-        uniforms: { tDiffuse: { value: null }, exposure: { value: .62 } },
-        vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-        fragmentShader: `uniform sampler2D tDiffuse; uniform float exposure; varying vec2 vUv;
-          vec3 fit(vec3 v){ vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
-          vec3 aces(vec3 c){ const mat3 i = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777); const mat3 o = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602); c *= exposure / 0.6; return clamp(o * fit(i * c), 0.0, 1.0); }
-          vec3 srgb(vec3 c){ return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
-          void main(){ gl_FragColor = vec4(srgb(aces(texture2D(tDiffuse, vUv).rgb)), 1.0); }`
-      }));
+      composer.addPass(new T.ShaderPass(T.GammaCorrectionShader));
     }
 
     // ---- 재질 도구 ----
     const grad = (() => { const t = new T.DataTexture(new Uint8Array([95, 165, 220, 255]), 4, 1, T.RedFormat); t.minFilter = t.magFilter = T.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; })();
-    const toon = (c, o = {}) => new T.MeshStandardMaterial(Object.assign({ color: c, roughness: .7, metalness: 0 }, o));
-    const hdr = (r, g, b, o = {}) => { const m = new T.MeshBasicMaterial(Object.assign({ toneMapped: false }, o)); m.color.setRGB(r * 1.8, g * 1.8, b * 1.8); return m; };
+    const toon = (c, o = {}) => new T.MeshToonMaterial(Object.assign({ color: c, gradientMap: grad }, o));
+    const hdr = (r, g, b, o = {}) => { const m = new T.MeshBasicMaterial(Object.assign({ toneMapped: false }, o)); m.color.setRGB(r, g, b); return m; };
     function outlineMat(w) {
       const m = new T.MeshBasicMaterial({ color: 0x1c1a24, side: T.BackSide });
       m.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace("#include <begin_vertex>", "vec3 transformed = position + normal * " + w.toFixed(4) + ";"); };
@@ -375,24 +338,21 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       return m;
     }
     const OL = outlineMat(.022), OLT = outlineMat(.035);
-    function withOutline(mesh) { return mesh; }
+    function withOutline(mesh, mat = OL) { const o = new T.Mesh(mesh.geometry, mat); o.raycast = () => {}; mesh.add(o); return mesh; }
     const canvasTex = (c, srgb = true) => { const t = new T.CanvasTexture(c); if (srgb) t.encoding = T.sRGBEncoding; t.anisotropy = 4; return t; };
 
-    // ---- 하늘·빛: 실사 하늘 사진(HDR)으로 하늘과 반사광을 만듦 ----
-    const SKYTINT = [[1, 1, 1], [.9, 1, .94], [1, 1, 1.03], [1.35, .6, .42], [1.04, 1.07, 1.13], [.42, .4, .6], [1.3, 1.03, .7]].map(a => new T.Vector3(a[0], a[1], a[2]));
-    const FOGC = [0xc9dbe6, 0xbdd3c6, 0xcadfea, 0xc98a66, 0xe2eaf0, 0x5f5a7a, 0xe9d0a0];
-    const skyTex = AS.sky; skyTex.mapping = T.EquirectangularReflectionMapping;
-    const pmrem = new T.PMREMGenerator(renderer); scene.environment = pmrem.fromEquirectangular(skyTex).texture; pmrem.dispose();
-    const skyU = { tSky: { value: skyTex }, tint: { value: new T.Vector3(1, 1, 1) } };
-    const sky = new T.Mesh(new T.SphereGeometry(180, 48, 24), new T.ShaderMaterial({
+    // ---- 하늘·빛 ----
+    const SKY = [[0x4f9fe0, 0xdcf0fb], [0x3f8f86, 0xcfe9d8], [0x3f9bdc, 0xd6eef9], [0x6a2622, 0xf2a46e], [0x86aed0, 0xeef5fa], [0x272340, 0x8580a8], [0xd99a35, 0xfbe6b3]];
+    const skyU = { top: { value: new T.Color(SKY[0][0]) }, bot: { value: new T.Color(SKY[0][1]) } };
+    const sky = new T.Mesh(new T.SphereGeometry(180, 32, 16), new T.ShaderMaterial({
       uniforms: skyU, side: T.BackSide, depthWrite: false, fog: false,
-      vertexShader: "varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-      fragmentShader: "uniform sampler2D tSky; uniform vec3 tint; varying vec3 vP; void main(){ vec3 d = normalize(vP); float y = max(d.y, 0.015); vec2 uv = vec2(atan(d.z, d.x) / 6.2831853 + 0.5, asin(y) / 3.14159265 + 0.5); vec3 c = texture2D(tSky, uv).rgb * tint;" + (composer ? "" : " c = pow(c / (c + 1.0), vec3(1.0 / 2.2));") + " gl_FragColor = vec4(c, 1.0); }"
+      vertexShader: "varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform vec3 top; uniform vec3 bot; varying vec3 vP; void main(){ float h = clamp(vP.y * 1.3 + 0.18, 0.0, 1.0); vec3 c = mix(bot, top, pow(h, 0.85));" + (composer ? "" : " c = pow(c, vec3(1.0/2.2));") + " gl_FragColor = vec4(c, 1.0); }"
     }));
     scene.add(sky);
-    scene.fog = new T.Fog(FOGC[0], 32, 90);
-    const hemi = new T.HemisphereLight(0xffffff, 0x6d6252, 0.45); scene.add(hemi);
-    const sun = new T.DirectionalLight(0xfff0d8, 1.7);
+    scene.fog = new T.Fog(SKY[0][1], 32, 90);
+    const hemi = new T.HemisphereLight(0xffffff, 0x6d6252, 0.5); scene.add(hemi);
+    const sun = new T.DirectionalLight(0xfff0d8, 1.25);
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 100 });
     sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.03;
@@ -456,52 +416,28 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const pos = geo.attributes.position, info = [];
     for (let i = 0; i < pos.count; i++) { const r = terrain(pos.getX(i), pos.getZ(i)); pos.setY(i, r.h); info.push(r); }
     geo.computeVertexNormals();
-    // 지형 재질: 구역별 사진 텍스처(풀·바위·눈·화산암·모래·돌길)를 섞어 칠함
-    const W1 = new Float32Array(pos.count * 4), W2 = new Float32Array(pos.count * 2), cols = new Float32Array(pos.count * 3), uvs = geo.attributes.uv.array, nrm = geo.attributes.normal;
-    const TINT = [[1.06, 1.1, .9], [.8, .92, .76], [.85, .9, .84], [1, .95, .92], [1.02, 1.03, 1.06], [.8, .76, 1], [1.25, 1.05, .72]];
+    const ZC = [0x9fd45f, 0x5a9f48, 0x5f866a, 0x3d3230, 0xf2f6fa, 0x5d5679, 0xe8c873].map(c => new T.Color(c));
+    const RK = [0x8d7b62, 0x6c6250, 0x6a6a5a, 0x2b2321, 0x8f99a7, 0x403a58, 0xb08c48].map(c => new T.Color(c));
+    const ROAD = new T.Color(0xe9d6a4), SAND = new T.Color(0xe2cc93), CLIFF = new T.Color(0x8a7356), CLIFF2 = new T.Color(0x6e5a44), HOT = new T.Color(0x3a1410), PEAKW = new T.Color(0xffffff);
+    const cols = new Float32Array(pos.count * 3), c = new T.Color(), tmp = new T.Color(), nrm = geo.attributes.normal;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i), r = info[i], S = r.S, ny = nrm.getY(i), h = r.h;
-      const m = k => S[k] - S[k + 1];
-      let g = m(0) + m(1), rk = m(5) + m(2) * .35, sn = m(4), dk = m(3), sa = m(6) * .5 + m(2) * .65, pa = m(6) * .5;
-      const slope = sstep(.9, .62, ny);
-      g *= 1 - slope; sn *= 1 - slope * .75; sa *= 1 - slope; pa *= 1 - slope;
-      if (m(3) > .5) dk += slope; else rk += slope;
-      if (m(2) > .01) sa += 2 * sstep(-1.5, -1.0, h) * (1 - sstep(-.1, .45, h));
-      const road = sstep(1.5, .95, r.d) * (1 - m(2));
-      g *= 1 - road; sn *= 1 - road; dk *= 1 - road * .7; rk *= 1 - road; sa *= 1 - road; pa += road * 1.6;
-      if (m(4) > .2 && h > BASE[4] + 3) sn += .9 * (1 - slope * .5);
-      if (r.edge > .04) { const e = sstep(.04, .3, r.edge); g *= 1 - e; sn *= 1 - e; sa *= 1 - e; pa *= 1 - e; rk += e * 2; }
-      const sum = g + rk + sn + dk + sa + pa + 1e-5;
-      W1[i * 4] = g / sum; W1[i * 4 + 1] = rk / sum; W1[i * 4 + 2] = sn / sum; W1[i * 4 + 3] = dk / sum; W2[i * 2] = sa / sum; W2[i * 2 + 1] = pa / sum;
-      let tr = 0, tg = 0, tb = 0;
-      for (let k = 0; k <= 6; k++) { const w = m(k); tr += TINT[k][0] * w; tg += TINT[k][1] * w; tb += TINT[k][2] * w; }
-      const v = .86 + .28 * fbm(x * .3, z * .3); tr *= v; tg *= v; tb *= v;
-      if (r.crack > 0) { const q = Math.min(1, r.crack * 1.6); tr += (1.3 - tr) * q; tg += (.32 - tg) * q; tb += (.16 - tb) * q; }
-      if (r.dv < 2.8 && m(3) > .5) { tr = 1.1; tg = .38; tb = .22; }
-      cols[i * 3] = tr; cols[i * 3 + 1] = tg; cols[i * 3 + 2] = tb;
-      uvs[i * 2] = x * .22; uvs[i * 2 + 1] = z * .22;
+      c.copy(ZC[0]); for (let j = 1; j <= 6; j++) c.lerp(ZC[j], S[j]);
+      tmp.copy(RK[0]); for (let j = 1; j <= 6; j++) tmp.lerp(RK[j], S[j]);
+      c.multiplyScalar(.9 + .2 * fbm(x * .45, z * .45));
+      const mRiver = S[2] - S[3], mSnow = S[4] - S[5], mStorm = S[5] - S[6];
+      if (mRiver > .01) { const sand = sstep(-1.5, -1.0, h) * (1 - sstep(-.1, .45, h)); c.lerp(SAND, sand * .9 * Math.min(1, mRiver * 3 + .3)); }
+      c.lerp(ROAD, sstep(1.45, .95, r.d) * (1 - mRiver) * .92);
+      if (mSnow > .2 && h > BASE[4] + 3) c.lerp(PEAKW, .6);
+      c.lerp(tmp, sstep(.86, .55, ny) * (mSnow > .5 ? .8 : 1));
+      if (mStorm > .3 && h > BASE[5] + .5 && Math.floor(h * 2.2) % 2) c.multiplyScalar(.82);
+      if (r.crack > 0) c.lerp(HOT, Math.min(1, r.crack * 1.5));
+      if (r.dv < 2.6 && (S[3] - S[4]) > .5) c.lerp(new T.Color(0x5a1d12), .7);
+      if (r.edge > .04) c.lerp(Math.floor(h * 1.4) % 2 ? CLIFF : CLIFF2, sstep(.04, .3, r.edge));
+      cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
     }
-    geo.setAttribute("aW1", new T.BufferAttribute(W1, 4)); geo.setAttribute("aW2", new T.BufferAttribute(W2, 2));
-    geo.setAttribute("color", new T.BufferAttribute(cols, 3)); geo.attributes.uv.needsUpdate = true;
-    const TX = AS.tex;
-    const groundMat = new T.MeshStandardMaterial({ vertexColors: true, roughness: .93, metalness: 0, normalMap: TX.grass.nor, normalScale: new T.Vector2(1.2, 1.2), envMapIntensity: .8 });
-    groundMat.onBeforeCompile = sh => {
-      Object.assign(sh.uniforms, { tG: { value: TX.grass.diff }, tR: { value: TX.rock.diff }, tS: { value: TX.snow.diff }, tD: { value: TX.dark.diff }, tA: { value: TX.sand.diff }, tP: { value: TX.path.diff } });
-      sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute vec4 aW1; attribute vec2 aW2; varying vec4 vW1; varying vec2 vW2; varying vec3 vWP; varying vec3 vWN;")
-        .replace("#include <fog_vertex>", "#include <fog_vertex>\nvW1 = aW1; vW2 = aW2; vWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normalize(mat3(modelMatrix) * objectNormal);");
-      sh.fragmentShader = sh.fragmentShader
-        .replace("#include <common>", `#include <common>
-uniform sampler2D tG; uniform sampler2D tR; uniform sampler2D tS; uniform sampler2D tD; uniform sampler2D tA; uniform sampler2D tP;
-varying vec4 vW1; varying vec2 vW2; varying vec3 vWP; varying vec3 vWN;
-vec3 lin3(vec3 c){ return pow(c, vec3(2.2)); }
-vec3 tri3(sampler2D t, vec3 p, vec3 n, float s){ return lin3(texture2D(t, p.zy * s).rgb) * n.x + lin3(texture2D(t, p.xz * s).rgb) * n.y + lin3(texture2D(t, p.xy * s).rgb) * n.z; }`)
-        .replace("#include <map_fragment>", `vec3 an = abs(normalize(vWN)); an /= (an.x + an.y + an.z);
-vec2 pu = vWP.xz * 0.22;
-vec3 tx = lin3(texture2D(tG, pu).rgb) * vW1.x + tri3(tR, vWP, an, 0.16) * vW1.y + lin3(texture2D(tS, pu * 0.7).rgb) * vW1.z + tri3(tD, vWP, an, 0.2) * vW1.w + lin3(texture2D(tA, pu * 0.8).rgb) * vW2.x + lin3(texture2D(tP, pu * 1.4).rgb) * vW2.y;
-diffuseColor.rgb *= tx * 1.15;`);
-    };
-    const ground = new T.Mesh(geo, groundMat);
+    geo.setAttribute("color", new T.BufferAttribute(cols, 3));
+    const ground = new T.Mesh(geo, new T.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true }));
     ground.receiveShadow = true; ground.castShadow = true; scene.add(ground);
 
     // ---- 물·용암 ----
@@ -511,7 +447,7 @@ diffuseColor.rgb *= tx * 1.15;`);
     const water = new T.Mesh(waterGeo, new T.MeshStandardMaterial({ color: 0x3aa6e0, roughness: .12, metalness: .15, transparent: true, opacity: .82, flatShading: true }));
     water.position.set(0, WATER_Y, (rz1 + rz2) / 2); water.receiveShadow = true; scene.add(water);
     const wBase = waterGeo.attributes.position.array.slice();
-    const lavaMat = hdr(1.9, .21, .01);
+    const lavaMat = hdr(3.2, .9, .12);
     const lava = new T.Mesh(new T.PlaneGeometry(44, zr[3][0] - zr[3][1] - 1.8, 1, 1).rotateX(-Math.PI / 2), lavaMat);
     lava.position.set(0, LAVA_Y, (zr[3][0] + zr[3][1]) / 2); scene.add(lava);
     const crater = new T.Mesh(new T.CircleGeometry(1.9, 24).rotateX(-Math.PI / 2), lavaMat);
@@ -571,73 +507,37 @@ diffuseColor.rgb *= tx * 1.15;`);
     };
     const rock = (x, z, y, s, col) => put("rock", G.rock, whiteToon, x, y + .2 * s, z, rnd() * 6, s, s * (.6 + rnd() * .5), s, col, OL);
 
-    // ---- 모델 배치 (사진 질감 나무·바위·풀·집) ----
-    function norm(obj, height) {
-      obj.updateMatrixWorld(true);
-      const b = new T.Box3().setFromObject(obj), sz = b.getSize(new T.Vector3()), s = height / (sz.y || 1);
-      obj.scale.multiplyScalar(s); obj.updateMatrixWorld(true);
-      const b2 = new T.Box3().setFromObject(obj), c2 = b2.getCenter(new T.Vector3());
-      obj.position.x -= c2.x; obj.position.z -= c2.z; obj.position.y -= b2.min.y;
-      const wrap = new T.Group(); wrap.add(obj); return wrap;
-    }
-    function variantsOf(gltf, height = 1) {
-      const sc = gltf.scene; sc.updateMatrixWorld(true);
-      let base = sc;
-      while (base.children.length === 1 && base.children[0].children.length && !base.children[0].children.every(c2 => c2.isMesh)) base = base.children[0];
-      const list = base.children.length ? base.children : [base];
-      return list.map(v => {
-        const parts = [], box = new T.Box3();
-        v.traverse(o => { if (o.isMesh) { const g2 = o.geometry.clone(); g2.applyMatrix4(o.matrixWorld); g2.computeBoundingBox(); box.union(g2.boundingBox); parts.push({ g: g2, m: o.material }); } });
-        if (!parts.length) return parts;
-        const sz = box.getSize(new T.Vector3()), ctr = box.getCenter(new T.Vector3()), s = height / (sz.y || 1);
-        parts.forEach(pp => { pp.g.translate(-ctr.x, -box.min.y, -ctr.z); pp.g.scale(s, s, s); });
-        return parts;
-      }).filter(pp => pp.length);
-    }
-    const placed = new Map();
-    function plant(kind, vars, x, y, z, h, ry, tint) {
-      const vi = Math.floor(rnd() * vars.length), key = kind + vi;
-      if (!placed.has(key)) placed.set(key, { parts: vars[vi], items: [], tint, noShadow: kind === "grass" });
-      placed.get(key).items.push([x, y, z, ry == null ? rnd() * 6.28 : ry, h]);
-    }
-    function flushPlants() {
-      const m4 = new T.Matrix4(), q = new T.Quaternion(), e = new T.Euler(), pp = new T.Vector3(), sc = new T.Vector3();
-      placed.forEach(b => b.parts.forEach(part => {
-        let mat = part.m;
-        if (b.tint != null) { const one = mm => { const k = mm.clone(); k.color.multiply(new T.Color(b.tint)); return k; }; mat = Array.isArray(mat) ? mat.map(one) : one(mat); }
-        // 잎·풀은 투명 부분을 잘라내서(알파 테스트) 정렬 문제 없이 그리고, 그림자도 잎 모양대로
-        let cutout = null;
-        const fix = mm => { if (mm.map && (mm.transparent || /grass|leaf|leaves|flower|shrub/i.test(mm.name || ""))) { mm.alphaTest = .45; mm.transparent = false; mm.depthWrite = true; mm.side = T.DoubleSide; cutout = mm.map; } return mm; };
-        mat = Array.isArray(mat) ? mat.map(fix) : fix(mat);
-        const im = new T.InstancedMesh(part.g, mat, b.items.length);
-        if (cutout) im.customDepthMaterial = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: cutout, alphaTest: .45 });
-        b.items.forEach((it, i) => { e.set(0, it[3], 0); q.setFromEuler(e); pp.set(it[0], it[1], it[2]); sc.setScalar(it[4]); m4.compose(pp, q, sc); im.setMatrixAt(i, m4); });
-        im.castShadow = !b.noShadow; im.receiveShadow = true; scene.add(im);
-      }));
-    }
-    const V = { pine: variantsOf(AS.pines), tree: variantsOf(AS.tree), bush: variantsOf(AS.bushes), moss: variantsOf(AS.mossRock) };
-    const shadowAll = o => o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
     // 출발 마을
+    function house(x, z, y, ry, wall, roof) {
+      const g = new T.Group(); g.position.set(x, y, z); g.rotation.y = ry;
+      const add = (geo2, mat, px, py, pz, ol = true) => { const m = new T.Mesh(geo2, mat); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; if (ol) withOutline(m); g.add(m); return m; };
+      add(new T.BoxGeometry(2.2, 1.6, 1.9), toon(wall), 0, .8, 0);
+      const rf = add(new T.CylinderGeometry(1.5, 1.5, 2.5, 3), toon(roof), 0, 2.05, 0); rf.rotation.z = Math.PI / 2; rf.rotation.y = Math.PI / 2; rf.scale.set(1, 1, .9);
+      add(new T.BoxGeometry(.5, .85, .06), toon(0x6b4423), 0, .43, .96, false);
+      [-.65, .65].forEach(px => add(new T.BoxGeometry(.38, .38, .05), hdr(1.6, 1.3, .7), px, 1.0, .96, false));
+      add(new T.BoxGeometry(.32, .7, .32), toon(0x9b6b4a), .55, 2.4, -.3);
+      scene.add(g);
+    }
     let hi = 0;
-    scatter(0, 4, 4.6, (x, z, y) => { const h = norm((hi++ % 2 ? AS.house2 : AS.house1).scene.clone(true), 4); shadowAll(h); h.position.set(x, y - .1, z); h.rotation.y = Math.atan2(P[0].x - x, P[0].z - z) + (rnd() - .5) * .5; scene.add(h); }, { maxD: 11, xr: 14 });
-    scatter(0, 8, 3.8, (x, z, y) => plant("tree", V.tree, x, y - .1, z, 3.2 + rnd() * 1.5, null, 0xb7c9a6));
-    scatter(0, 14, 1.8, (x, z, y) => plant("bush", V.bush, x, y - .05, z, .8 + rnd() * .5));
+    scatter(0, 4, 3.4, (x, z, y) => { const pal = [[0xfff3e0, 0xe0574a], [0xf4efe6, 0x4f80d0], [0xfff8ea, 0xe39b3a], [0xf2ece0, 0x6aa84f]][hi++ % 4]; house(x, z, y, Math.atan2(P[0].x - x, P[0].z - z) + (rnd() - .5) * .6, pal[0], pal[1]); }, { maxD: 10, xr: 13 });
+    scatter(0, 10, 2.6, (x, z, y) => roundTree(x, z, y, .8 + rnd() * .5));
+    scatter(0, 260, 1.6, (x, z, y) => put("tuft", G.tuft, whiteToon, x, y + .12, z, rnd() * 6, .07, .3 + rnd() * .2, .07, new T.Color().setHSL(.25, .5, .3 + rnd() * .1, "srgb").getHex()));
+    scatter(0, 90, 1.6, (x, z, y) => put("flower", G.sph, whiteToon, x, y + .14, z, 0, .1, .1, .1, [0xffffff, 0xffd84a, 0xff7aa8, 0xb48cff][Math.floor(rnd() * 4)]));
     // 어둠의 숲
-    scatter(1, small ? 40 : 58, 3.3, (x, z, y) => plant("pine", V.pine, x, y - .15, z, 3.4 + rnd() * 2.8, null, 0x86a37e));
-    scatter(1, 20, 1.8, (x, z, y) => plant("bushF", V.bush, x, y - .05, z, .8 + rnd() * .6, null, 0x9bb58f));
-    scatter(1, 12, 2.2, (x, z, y) => plant("moss", V.moss, x, y - .15, z, .7 + rnd() * .9));
+    scatter(1, small ? 45 : 70, 2.6, (x, z, y) => pine(x, z, y, .65 + rnd() * .5, .3 + rnd() * .05, false));
+    scatter(1, 200, 1.6, (x, z, y) => put("tuft", G.tuft, whiteToon, x, y + .12, z, rnd() * 6, .07, .3 + rnd() * .2, .07, new T.Color().setHSL(.28, .45, .22 + rnd() * .08, "srgb").getHex()));
+    scatter(1, 18, 1.8, (x, z, y) => { put("mstem", G.cyl, toon(0xf3ead8), x, y + .15, z, 0, .07, .3, .07, null, OL); put("mcap", G.sph, toon(0xe0433a), x, y + .32, z, 0, .2, .12, .2, null, OL); });
     // 괴물 강
-    scatter(2, 12, 2.4, (x, z, y) => plant("rockR", V.moss, x, Math.max(y, WATER_Y - .6), z, .9 + rnd() * 1.0), { water: true });
-    scatter(2, 8, 2.2, (x, z, y) => plant("mossR", V.moss, x, y - .15, z, .8 + rnd() * .7));
-    // 화산 용암지대
-    scatter(3, 24, 2.1, (x, z, y) => plant("rockL", V.moss, x, y - .15, z, .7 + rnd() * 1.2, null, 0x5a4642));
+    scatter(2, 14, 2.2, (x, z) => put("lily", G.cyl, toon(0x4caf50), x, WATER_Y + .02, z, rnd() * 6, .45, .03, .45, null), { water: true });
+    scatter(2, 10, 2.5, (x, z, y) => rock(x, z, Math.max(y, WATER_Y - .3), .5 + rnd() * .5, 0x7c7f74), { water: true });
+    // 용암지대
+    scatter(3, 22, 2.1, (x, z, y) => rock(x, z, y, .4 + rnd() * .7, 0x2e2624));
     // 설산
-    scatter(4, 24, 3.2, (x, z, y) => plant("pineS", V.pine, x, y - .15, z, 3 + rnd() * 2.5, null, 0xbcccc8), { maxD: 11 });
-    scatter(4, 10, 2.4, (x, z, y) => plant("rockS", V.moss, x, y - .15, z, .7 + rnd() * .9, null, 0xd8dee6));
+    scatter(4, 26, 2.6, (x, z, y) => pine(x, z, y, .6 + rnd() * .5, .4 + rnd() * .04, true), { maxD: 11 });
     // 천둥 협곡
     scatter(5, 18, 2.4, (x, z, y) => put("cry", G.crystal, hdr(1.4, .7, 2.6), x, y + .5, z, rnd() * 6, .25 + rnd() * .2, .7 + rnd() * .6, .25 + rnd() * .2), { maxD: 6.5 });
-    scatter(5, 14, 2.2, (x, z, y) => plant("rockT", V.moss, x, y - .15, z, .7 + rnd() * .9, null, 0x9a94b8));
-    flush(); flushPlants();
+    scatter(5, 14, 2.2, (x, z, y) => rock(x, z, y, .4 + rnd() * .5, 0x37324b), { maxD: 6 });
+    flush();
 
     // ---- 물뱀 ----
     const serpents = [], snakeM = toon(0x3e9c5a), bellyM = toon(0xb9e07a), finM = toon(0xe0673a);
@@ -682,15 +582,28 @@ diffuseColor.rgb *= tx * 1.15;`);
       for (let y = BASE[5] + 9.5; y > BASE[5] + .5; y -= .9) { pts.push(new T.Vector3(x, y, z)); x += (rnd() - .5) * 1.5; z += (rnd() - .5) * .6; }
       bolt.geometry.dispose(); bolt.geometry = new T.TubeGeometry(new T.CatmullRomCurve3(pts, false, "catmullrom", .1), 40, .07, 5); bolt.visible = true;
     }
+    // 흰 구름
     const clouds = [];
+    for (let j = 0; j < 10; j++) {
+      const g2 = new T.Group(), side = j % 2 ? 1 : -1;
+      for (let q = 0; q < 5; q++) { const m = new T.Mesh(G.blob, toon(0xffffff)); const s = 1 + rnd() * 1.3; m.scale.set(s * 1.3, s * .8, s); m.position.set(q * 1.4 - 2.8, rnd() * .6, rnd() * 1.2); g2.add(m); }
+      g2.position.set(side * (30 + rnd() * 12), 4 + rnd() * 9, Z_TOP - rnd() * GD); scene.add(g2); clouds.push(g2);
+    }
 
     // ---- 황금 성 ----
-    const castle = norm(AS.castle.scene, 10); shadowAll(castle);
-    castle.position.set(P[TOTAL + 1].x, heightAt(P[TOTAL + 1].x, P[TOTAL + 1].z - 6.5) - .15, P[TOTAL + 1].z - 6.5); scene.add(castle);
-    const pole = new T.Mesh(new T.CylinderGeometry(.05, .05, 3.2, 8), new T.MeshStandardMaterial({ color: 0x8a8a8a, metalness: .7, roughness: .35 }));
-    pole.position.set(P[TOTAL + 1].x + 2.3, P[TOTAL + 1].y + 1.6, P[TOTAL + 1].z - .8); pole.castShadow = true; scene.add(pole);
-    const flag = new T.Mesh(new T.PlaneGeometry(1.5, .9, 10, 1), new T.MeshStandardMaterial({ color: 0xf4c542, side: T.DoubleSide, roughness: .6 }));
-    flag.position.set(pole.position.x + .78, pole.position.y + 1.1, pole.position.z); flag.castShadow = true; scene.add(flag);
+    const castle = new T.Group(), stone = toon(0xefe3c6), roofM = toon(0x3765d6), goldM = hdr(2.6, 1.9, .5);
+    const cAdd = (geo2, mat, x, y, z, ol = true) => { const m = new T.Mesh(geo2, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; if (ol) withOutline(m); castle.add(m); return m; };
+    cAdd(new T.BoxGeometry(8, 3, 1.4), stone, 0, 1.5, 0);
+    for (let q = -3.6; q <= 3.61; q += .8) cAdd(new T.BoxGeometry(.45, .45, 1.5), stone, q, 3.2, 0);
+    cAdd(new T.BoxGeometry(1.7, 2.1, .2), toon(0x6b4423), 0, 1.05, .72, false);
+    cAdd(new T.CylinderGeometry(.85, .85, .2, 16, 1, false, 0, Math.PI), toon(0x6b4423), 0, 2.1, .72, false).rotation.x = Math.PI / 2;
+    [-4, 4].forEach(x => { cAdd(new T.CylinderGeometry(1.05, 1.15, 4.8, 12), stone, x, 2.4, 0); cAdd(new T.ConeGeometry(1.4, 2.1, 12), roofM, x, 5.85, 0); cAdd(G.sph, goldM, x, 7, 0, false).scale.setScalar(.14); });
+    cAdd(new T.BoxGeometry(3, 5.6, 2.4), stone, 0, 2.8, -1.6);
+    cAdd(new T.ConeGeometry(2.2, 2.6, 4), roofM, 0, 6.9, -1.6).rotation.y = Math.PI / 4;
+    cAdd(new T.CylinderGeometry(.05, .05, 2.4, 6), toon(0x555555), 0, 9.3, -1.6, false);
+    const flag = new T.Mesh(new T.PlaneGeometry(1.5, .9, 8, 1), toon(0xf4c542, { side: T.DoubleSide })); flag.position.set(.78, 9.95, -1.6); castle.add(flag);
+    [-2, 2].forEach(x => { const b = cAdd(new T.PlaneGeometry(.7, 1.6), toon(0xd8433a, { side: T.DoubleSide }), x, 2, .72, false); });
+    castle.position.set(P[TOTAL + 1].x, heightAt(P[TOTAL + 1].x, P[TOTAL + 1].z - 4), P[TOTAL + 1].z - 4); scene.add(castle);
     const flagBase = flag.geometry.attributes.position.array.slice();
 
     // ---- 발판 ----
@@ -701,8 +614,7 @@ diffuseColor.rgb *= tx * 1.15;`);
       x.fillStyle = on ? "#6b4100" : "#6f675b"; x.fillText(String(n), 128, 138);
       return canvasTex(cv);
     }
-    const stoneTop = new T.MeshStandardMaterial({ color: 0xece6da, map: AS.tex.rock.diffS, normalMap: AS.tex.rock.nor, roughness: .85 }), stoneSide = new T.MeshStandardMaterial({ color: 0xb9b0a2, map: AS.tex.rock.diffS, normalMap: AS.tex.rock.nor, roughness: .9 });
-    const goldTop = new T.MeshStandardMaterial({ color: 0xffcc55, metalness: .85, roughness: .3, emissive: 0x5a3500, emissiveIntensity: .7 }), goldSide = new T.MeshStandardMaterial({ color: 0xd99a2a, metalness: .8, roughness: .36 });
+    const stoneTop = toon(0xe3dccd), stoneSide = toon(0xa79f90), goldTop = toon(0xffc93c, { emissive: 0xff9a00, emissiveIntensity: .25 }), goldSide = toon(0xd9962a);
     const rimGeo = new T.TorusGeometry(1.08, .06, 6, 6);
     const rimMat = hdr(3, 2.1, .4);
     const tiles = [], pick = [];
@@ -749,49 +661,124 @@ diffuseColor.rgb *= tx * 1.15;`);
       s.position.set(P[i].x + (P[i].x > 0 ? -5 : 5), P[i].y + 3.2, P[i].z); scene.add(s); zoneLabels[k] = s;
     });
 
-    // ---- 캐릭터 (걷기·뛰기·손 흔들기 동작이 있는 모델) ----
-    function makeChar(gltf, o) {
-      const root = new T.Group(), body = new T.Group(); root.add(body);
-      const model = gltf.scene;
-      model.traverse(m => {
-        if (!m.isMesh) return;
-        m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
-        if (o.hide && o.hide.test(m.name)) m.visible = false;
-        if (o.recolor) { const one = mt => { const c3 = o.recolor[mt.name]; if (c3 == null) return mt; const k = mt.clone(); k.color.set(c3); return k; }; m.material = Array.isArray(m.material) ? m.material.map(one) : one(m.material); }
-      });
-      body.add(norm(model, o.height));
-      const mixer = new T.AnimationMixer(model), acts = {};
-      gltf.animations.forEach(cl => { acts[cl.name.split("|").pop()] = mixer.clipAction(cl); });
-      const pickA = list => { for (const n of list || []) if (acts[n]) return acts[n]; return null; };
-      const AN = { idle: pickA(o.idle), walk: pickA(o.walk), run: pickA(o.run), wave: pickA(o.wave), jump: pickA(o.jump) };
-      if (AN.jump) { AN.jump.setLoop(T.LoopOnce); AN.jump.clampWhenFinished = true; }
-      let cur = null;
-      function play(name, ts = 1) {
-        const a = AN[name] || AN.idle; if (!a) return;
-        a.timeScale = ts;
-        if (a === cur) return;
-        a.reset(); a.setEffectiveWeight(1); a.fadeIn(.22); a.play(); if (cur) cur.fadeOut(.22); cur = a;
+    // ---- 캐릭터 ----
+    const CG = {
+      shoe: new T.SphereGeometry(.12, 16, 12), leg: new T.CapsuleGeometry(.1, .24, 4, 12), shorts: new T.CylinderGeometry(.25, .28, .22, 18),
+      skirt: new T.CylinderGeometry(.2, .38, .42, 20), torso: new T.CapsuleGeometry(.26, .2, 6, 18), arm: new T.CapsuleGeometry(.085, .2, 4, 12),
+      hand: new T.SphereGeometry(.09, 14, 12), head: new T.SphereGeometry(.46, 36, 28), ear: new T.SphereGeometry(.09, 12, 10), ball: new T.SphereGeometry(1, 20, 16)
+    };
+    function faceTex(kind) {
+      const cv = document.createElement("canvas"); cv.width = cv.height = 512; const x = cv.getContext("2d"); x.lineCap = "round"; x.lineJoin = "round";
+      const ink = "#2a1d17";
+      x.fillStyle = "rgba(244,130,125,.45)"; [[128, 330], [384, 330]].forEach(([cx, cy]) => { x.beginPath(); x.ellipse(cx, cy, 44, 24, 0, 0, 7); x.fill(); });
+      const arcEye = (cx, cy) => { x.strokeStyle = ink; x.lineWidth = 22; x.beginPath(); x.moveTo(cx - 44, cy + 10); x.quadraticCurveTo(cx, cy - 46, cx + 44, cy + 10); x.stroke(); };
+      const brow = (cx, cy, tilt) => { x.strokeStyle = "#1d1e22"; x.lineWidth = 16; x.beginPath(); x.moveTo(cx - 44, cy + tilt); x.quadraticCurveTo(cx, cy - 16, cx + 44, cy - tilt); x.stroke(); };
+      const bigSmile = () => {
+        x.fillStyle = "#9c3343"; x.beginPath(); x.moveTo(190, 352); x.quadraticCurveTo(256, 470, 322, 352); x.quadraticCurveTo(256, 372, 190, 352); x.fill();
+        x.fillStyle = "#ffffff"; x.beginPath(); x.moveTo(200, 356); x.quadraticCurveTo(256, 376, 312, 356); x.quadraticCurveTo(306, 384, 256, 388); x.quadraticCurveTo(206, 384, 200, 356); x.fill();
+        x.fillStyle = "#e46f7b"; x.beginPath(); x.ellipse(256, 425, 34, 18, 0, 0, 7); x.fill();
+      };
+      if (kind === "hero") { brow(150, 178, 6); brow(362, 178, -6); arcEye(150, 262); arcEye(362, 262); bigSmile(); x.strokeStyle = "#d29a7d"; x.lineWidth = 8; x.beginPath(); x.moveTo(262, 280); x.quadraticCurveTo(250, 312, 266, 318); x.stroke(); }
+      else if (kind === "kid") {
+        [[160, 268], [352, 268]].forEach(([cx, cy]) => { x.fillStyle = ink; x.beginPath(); x.ellipse(cx, cy, 26, 20, 0, 0, 7); x.fill(); x.fillStyle = "#fff"; x.beginPath(); x.arc(cx + 8, cy - 7, 6, 0, 7); x.fill(); x.strokeStyle = ink; x.lineWidth = 12; x.beginPath(); x.moveTo(cx - 40, cy - 22); x.lineTo(cx + 38, cy - 18); x.stroke(); });
+        x.strokeStyle = ink; x.lineWidth = 12; x.beginPath(); x.moveTo(220, 372); x.quadraticCurveTo(262, 388, 296, 360); x.stroke();
+      } else if (kind === "girl") {
+        [[158, 262], [354, 262]].forEach(([cx, cy]) => { x.fillStyle = ink; x.beginPath(); x.ellipse(cx, cy, 28, 36, 0, 0, 7); x.fill(); x.fillStyle = "#fff"; x.beginPath(); x.arc(cx + 9, cy - 13, 10, 0, 7); x.fill(); x.beginPath(); x.arc(cx - 8, cy + 12, 5, 0, 7); x.fill(); x.strokeStyle = ink; x.lineWidth = 8; x.beginPath(); x.moveTo(cx + 24, cy - 26); x.lineTo(cx + 40, cy - 38); x.stroke(); });
+        x.fillStyle = "#c2414f"; x.beginPath(); x.moveTo(212, 352); x.quadraticCurveTo(256, 420, 300, 352); x.quadraticCurveTo(256, 368, 212, 352); x.fill();
+      } else {
+        arcEye(150, 262); arcEye(362, 262);
+        if (kind === "farmer") { x.fillStyle = "#4a3222"; x.beginPath(); x.ellipse(214, 340, 54, 20, .2, 0, 7); x.fill(); x.beginPath(); x.ellipse(298, 340, 54, 20, -.2, 0, 7); x.fill(); x.strokeStyle = "#7a3b3b"; x.lineWidth = 14; x.beginPath(); x.moveTo(218, 382); x.quadraticCurveTo(256, 408, 294, 382); x.stroke(); }
+        else { x.strokeStyle = "#8a3a44"; x.lineWidth = 14; x.beginPath(); x.moveTo(206, 360); x.quadraticCurveTo(256, 410, 306, 360); x.stroke(); x.strokeStyle = "#6a6a72"; x.lineWidth = 8; [[150, 262], [362, 262]].forEach(([cx, cy]) => { x.beginPath(); x.arc(cx, cy - 6, 58, 0, 7); x.stroke(); }); x.beginPath(); x.moveTo(208, 256); x.lineTo(304, 256); x.stroke(); }
       }
-      play("idle");
-      scene.add(root);
-      return { root, body, mixer, play };
+      return canvasTex(cv);
     }
-    const HERO = makeChar(AS.businessman, { height: 2.3, idle: ["Idle", "Idle_Neutral"], walk: ["Walk"], run: ["Run"], wave: ["Wave"] });
-    const hero = HERO.root, body = HERO.body;
-    let waveT = 0;
+    function stripeTex() {
+      const cv = document.createElement("canvas"); cv.width = cv.height = 64; const x = cv.getContext("2d");
+      x.fillStyle = "#1c2448"; x.fillRect(0, 0, 64, 64); x.lineWidth = 6;
+      for (let q = -64; q < 128; q += 22) { x.strokeStyle = "#f2f2f2"; x.beginPath(); x.moveTo(q, 64); x.lineTo(q + 64, 0); x.stroke(); x.strokeStyle = "#8c2a36"; x.beginPath(); x.moveTo(q + 7, 64); x.lineTo(q + 71, 0); x.stroke(); }
+      const t = canvasTex(cv); t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(9, 9); return t;
+    }
+    function makeChibi(o) {
+      const root = new T.Group(), body = new T.Group(); root.add(body);
+      const skinM = toon(o.skin || 0xf8d5b8);
+      const add = (g2, mat, x, y, z, parent = body, ol = true) => { const m = new T.Mesh(g2, mat); m.position.set(x, y, z); m.castShadow = true; if (ol) withOutline(m); parent.add(m); return m; };
+      const legM = o.bottom === "pants" ? toon(o.bottomColor) : skinM, shoeM = toon(o.shoe);
+      const legs = [-1, 1].map(s => {
+        const hip = new T.Group(); hip.position.set(.13 * s, .5, 0); body.add(hip);
+        add(CG.leg, legM, 0, -.2, 0, hip);
+        add(CG.shoe, shoeM, 0, -.425, .045, hip).scale.set(1, .62, 1.45);
+        return hip;
+      });
+      if (o.bottom === "shorts") add(CG.shorts, toon(o.bottomColor), 0, .5, 0);
+      if (o.bottom === "skirt") add(CG.skirt, toon(o.bottomColor), 0, .56, 0);
+      const torso = add(CG.torso, toon(o.top), 0, .78, 0); torso.scale.set(1.05, 1, .82);
+      if (o.suit) {
+        const fz = .218;
+        const shp = pts => { const s = new T.Shape(); pts.forEach(([a, b], i) => i ? s.lineTo(a, b) : s.moveTo(a, b)); return new T.ShapeGeometry(s); };
+        add(shp([[-.13, 1.08], [.13, 1.08], [0, .74]]), toon(0xffffff), 0, 0, fz, body, false);
+        add(shp([[-.13, 1.08], [-.02, .76], [-.08, .7], [-.2, 1.0]]), toon(0x131a2c), 0, 0, fz + .003, body, false);
+        add(shp([[.13, 1.08], [.02, .76], [.08, .7], [.2, 1.0]]), toon(0x131a2c), 0, 0, fz + .003, body, false);
+        add(shp([[-.035, 1.07], [.035, 1.07], [.026, 1.01], [-.026, 1.01]]), new T.MeshToonMaterial({ map: stripeTex(), gradientMap: grad }), 0, 0, fz + .006, body, false);
+        add(shp([[-.026, 1.01], [.026, 1.01], [.05, .78], [0, .72], [-.05, .78]]), new T.MeshToonMaterial({ map: stripeTex(), gradientMap: grad }), 0, 0, fz + .006, body, false);
+        [.62, .52].forEach(y => add(CG.hand, toon(0x0e1220), 0, y, .2, body, false).scale.setScalar(.22));
+      }
+      if (o.collar) add(new T.TorusGeometry(.17, .04, 8, 20), toon(o.collar), 0, 1.06, 0).rotation.x = Math.PI / 2;
+      const arms = [-1, 1].map(s => {
+        const a = new T.Group(); a.position.set(.31 * s, .98, 0); body.add(a);
+        add(CG.arm, toon(o.top), 0, -.17, 0, a);
+        if (!o.pockets) add(CG.hand, skinM, 0, -.34, 0, a); else { a.rotation.z = -.2 * s; a.rotation.x = .22; }
+        if (!o.pockets) a.rotation.z = .1 * s;
+        return a;
+      });
+      const head = new T.Group(); head.position.y = 1.43; body.add(head);
+      add(CG.head, skinM, 0, 0, 0, head);
+      const face = new T.Mesh(new T.SphereGeometry(.4632, 40, 24, Math.PI / 2 - .9, 1.8, Math.PI / 2 - .85, 1.7), new T.MeshToonMaterial({ map: faceTex(o.face), transparent: true, gradientMap: grad, polygonOffset: true, polygonOffsetFactor: -2 }));
+      head.add(face);
+      [-1, 1].forEach(s => add(CG.ear, skinM, .45 * s, -.02, 0, head).scale.set(.55, 1, .8));
+      const hairM = toon(o.hairColor);
+      const cap = (theta, rx = 0, sc = 1.06) => { const m = add(new T.SphereGeometry(.47, 36, 18, 0, Math.PI * 2, 0, Math.PI * theta), hairM, 0, .02, -.01, head); m.scale.setScalar(sc); m.rotation.x = rx; return m; };
+      const backHair = (t0, t1, sc = 1.06) => { const m = add(new T.SphereGeometry(.47, 30, 16, Math.PI, Math.PI, Math.PI * t0, Math.PI * t1), hairM, 0, .0, -.015, head); m.scale.setScalar(sc); return m; };
+      const blob = (x, y, z, sx, sy, sz, rx = 0, rz = 0) => { const m = add(CG.ball, hairM, x, y, z, head); m.scale.set(sx, sy, sz); m.rotation.set(rx, 0, rz); return m; };
+      if (o.hair === "hero") {
+        cap(.5, -.28, 1.06); backHair(.3, .38, 1.05);
+        blob(.06, .4, .2, .34, .17, .25, -.5, -.12); blob(-.14, .36, .24, .24, .13, .2, -.6, .25); blob(.2, .3, .3, .2, .12, .17, -.7, -.35);
+        [-1, 1].forEach(s => blob(.43 * s, .06, .03, .07, .16, .14));
+      } else if (o.hair === "bowl") {
+        cap(.45, 0, 1.12); backHair(.3, .45, 1.1);
+        blob(0, .1, .36, .36, .1, .14);
+        [-1, 1].forEach(s => blob(.45 * s, -.02, .05, .1, .22, .2));
+      } else if (o.hair === "bun") {
+        cap(.48); backHair(.3, .36); blob(0, .32, -.32, .17, .17, .17);
+      } else if (o.hair === "pigtails") {
+        cap(.5, -.1); backHair(.3, .4);
+        [-1, 1].forEach(s => { blob(.48 * s, -.05, -.06, .14, .2, .14); add(CG.ball, toon(0xff5d8f), .43 * s, .1, -.05, head).scale.setScalar(.06); });
+      } else { cap(.44); backHair(.3, .36); }
+      if (o.hat) {
+        const straw = toon(0xe8c57c);
+        add(new T.CylinderGeometry(.72, .72, .04, 28), straw, 0, .25, 0, head);
+        add(new T.CylinderGeometry(.34, .4, .3, 20), straw, 0, .4, 0, head);
+        add(new T.CylinderGeometry(.405, .405, .07, 20), toon(0xb23a3a), 0, .29, 0, head, false);
+      }
+      root.userData = { body, arms, head, legs, pockets: !!o.pockets };
+      return root;
+    }
+    const hero = makeChibi({ suit: true, top: 0x202a45, bottom: "pants", bottomColor: 0x1e2740, shoe: 0x17171a, hair: "hero", hairColor: 0x15151a, face: "hero" });
+    hero.scale.setScalar(1.35); scene.add(hero);
+    const body = hero.userData.body, arms = hero.userData.arms, legs = hero.userData.legs;
 
     // ---- 마을 주민 ----
     const VDEF = [
-      [AS.casual, { height: 1.55, recolor: { Red_Dark: 0xd8261d, LightBrown: 0xd8261d, LightBlue: 0xf2c418, Hair: 0x141414 }, idle: ["Idle"], walk: ["Walk"], run: ["Run"], wave: ["Wave"] }],
-      [AS.farmer, { height: 2.15, idle: ["Idle"], walk: ["Walk"], run: ["Run"], wave: ["Wave"] }],
-      [AS.lis, { height: 1.7, hide: /pistol/i, idle: ["Idle"], walk: ["Walk"], run: ["Run"], wave: ["Wave"], jump: ["Jump"] }],
-      [AS.woman, { height: 1.95, recolor: { Hair: 0xc8c8ce, Jacket: 0x6d4c9f, LightJacket: 0x8f74c0 }, idle: ["Female_Idle"], walk: ["Female_Walk"], run: ["Female_Run"], wave: ["Female_Clapping"], jump: ["Female_Jump"] }]
+      { top: 0xe23b32, bottom: "shorts", bottomColor: 0xf4cf2e, shoe: 0xf4f4f4, hair: "bowl", hairColor: 0x16161b, face: "kid", pockets: true },
+      { top: 0x4d9a52, bottom: "pants", bottomColor: 0x7b5534, shoe: 0x3b2a1c, hair: "short", hairColor: 0x3a2a1c, face: "farmer", hat: true },
+      { top: 0xf58fb3, bottom: "skirt", bottomColor: 0xee5f93, shoe: 0xd9486c, hair: "pigtails", hairColor: 0x6b3f22, face: "girl" },
+      { top: 0x7e57c2, bottom: "skirt", bottomColor: 0x5b4a7c, shoe: 0x4a3a2a, hair: "bun", hairColor: 0xc9c9d1, face: "grandma", collar: 0xffffff }
     ];
-    const raftM = new T.MeshStandardMaterial({ color: 0x8b5e34, roughness: .85 });
-    const villagers = VDEF.map(([g2, o]) => {
-      const c3 = makeChar(g2, o);
-      const raft = new T.Mesh(new T.CylinderGeometry(.6, .66, .16, 10), raftM); raft.position.y = -.06; raft.visible = false; raft.castShadow = raft.receiveShadow = true; c3.root.add(raft);
-      return { g: c3.root, b: c3.body, c: c3, raft };
+    const raftM = toon(0xb98552);
+    const villagers = VDEF.map(o => {
+      const g = makeChibi(o); g.scale.setScalar(.95);
+      const raft = withOutline(new T.Mesh(new T.CylinderGeometry(.55, .6, .14, 10), raftM)); raft.position.y = -.05; raft.visible = false; g.add(raft);
+      scene.add(g);
+      return { g, b: g.userData.body, arms: g.userData.arms, legs: g.userData.legs, pockets: g.userData.pockets, raft };
     });
     const OFFS = [[-2.4, .7], [2.4, .7], [-1.8, -1.9], [1.8, -1.9]];
     let vInit = false;
@@ -915,7 +902,7 @@ diffuseColor.rgb *= tx * 1.15;`);
       drag = null;
     });
 
-    const skyTintV = new T.Vector3(1, 1, 1), fogC = new T.Color(FOGC[0]), tc = new T.Color(), pv = new T.Vector3();
+    const topC = new T.Color(SKY[0][0]), botC = new T.Color(SKY[0][1]), tc = new T.Color(), pv = new T.Vector3();
     const clock = new T.Clock();
     function frame() {
       const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
@@ -971,13 +958,21 @@ diffuseColor.rgb *= tx * 1.15;`);
       walkPhase += dt * (walking ? 11 : 0);
       const moving = !!hop;
       landT = Math.max(0, landT - dt);
-      waveT = Math.max(0, waveT - dt);
-      if (moving) HERO.play("run", 1.3);
-      else if (air) HERO.play("run", .35);
-      else if (walking) HERO.play(keys.ShiftLeft || keys.ShiftRight ? "run" : "walk", 1.1);
-      else if (waveT > 0) HERO.play("wave");
-      else HERO.play("idle");
-      HERO.mixer.update(dt);
+      if (air) {
+        body.position.y = 0; body.scale.y = 1 + Math.max(-.08, Math.min(.08, vy * .015));
+        legs[0].rotation.x = -.6; legs[1].rotation.x = .35;
+        arms[0].rotation.x = -2.6; arms[1].rotation.x = -2.6;
+      } else if (walking) {
+        const sw = Math.sin(walkPhase);
+        body.position.y = Math.abs(Math.cos(walkPhase)) * .06; body.scale.y = 1 - landT * .9;
+        legs[0].rotation.x = sw * .7; legs[1].rotation.x = -sw * .7;
+        arms[0].rotation.x = -sw * .8; arms[1].rotation.x = sw * .8;
+      } else {
+        legs[0].rotation.x *= .7; legs[1].rotation.x *= .7;
+        body.position.y = moving ? 0 : Math.abs(Math.sin(t * 2.2)) * .04;
+        body.scale.y = moving ? 1 : 1 - Math.abs(Math.sin(t * 2.2)) * .02 - landT * .9;
+        arms[0].rotation.x = moving ? -1.3 : Math.sin(t * 2.2) * .12; arms[1].rotation.x = moving ? -1.3 : -Math.sin(t * 2.2) * .12;
+      }
       const camYaw = Math.atan2(camera.position.x - hero.position.x, camera.position.z - hero.position.z);
       const wantYaw = idleT < 1.2 ? moveYaw : camYaw;
       let dy = wantYaw - hero.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
@@ -998,8 +993,8 @@ diffuseColor.rgb *= tx * 1.15;`);
       const zk = roam ? zoneZ(hero.position.z) : zoneOf(heroIdx);
       if (zk !== lastHudZone) { lastHudZone = zk; if (world.onZone) world.onZone(zk); }
       barMat.map.offset.x = (t * .15) % 1; barMat.opacity = .75 + Math.sin(t * 3) * .15;
-      skyTintV.lerp(SKYTINT[zk], .03); skyU.tint.value.copy(skyTintV);
-      fogC.lerp(tc.setHex(FOGC[zk]), .03); scene.fog.color.copy(fogC);
+      topC.lerp(tc.setHex(SKY[zk][0]), .03); botC.lerp(tc.setHex(SKY[zk][1]), .03);
+      skyU.top.value.copy(topC); skyU.bot.value.copy(botC); scene.fog.color.copy(botC);
       scene.fog.near += ((overview ? 90 : 30) - scene.fog.near) * .05; scene.fog.far += ((overview ? 190 : 88) - scene.fog.far) * .05;
       // 물결·거품
       const pa = waterGeo.attributes.position.array;
@@ -1013,7 +1008,7 @@ diffuseColor.rgb *= tx * 1.15;`);
         sp.segs.forEach((m, j) => { const x = hx - sp.dir * (j + 1) * .48; m.position.set(x, WATER_Y - .05 + Math.sin(t * 3.2 - j * .75) * .42, sp.z + Math.sin(t * 1.3 - (j + 1) * .4) * .4); });
       });
       // 용암·연기·불씨·눈
-      const lp = .85 + Math.sin(t * 2.2) * .12 + Math.sin(t * 5.3) * .05; lavaMat.color.setRGB(3.4 * lp, .38 * lp, .02);
+      const lp = .85 + Math.sin(t * 2.2) * .12 + Math.sin(t * 5.3) * .05; lavaMat.color.setRGB(3.2 * lp, .9 * lp, .12);
       lavaLight.intensity = 1.4 + Math.sin(t * 4) * .3;
       const cy = heightAt(vx, vz);
       smoke.forEach(s => { s.userData.t = (s.userData.t + dt * .1) % 1; const u = s.userData.t; s.position.set(vx + Math.sin(u * 6 + s.id) * .9, cy + 1 + u * 7, vz + Math.cos(u * 5) * .5); s.scale.setScalar(.5 + u * 1.9); s.material.opacity = .6 * (1 - u); });
@@ -1026,7 +1021,7 @@ diffuseColor.rgb *= tx * 1.15;`);
       clouds.forEach((g2, j) => { g2.position.z -= dt * .4; if (g2.position.z < Z_BOT - 10) g2.position.z = Z_TOP + 10; });
       nextBolt -= dt;
       if (nextBolt <= 0) { strike(); flash = .16; nextBolt = 2.4 + rnd() * 3; }
-      if (flash > 0) { flash -= dt; hemi.intensity = .45 + (zk === 5 ? 1.6 : .4); if (flash <= 0) { bolt.visible = false; hemi.intensity = .45; } }
+      if (flash > 0) { flash -= dt; hemi.intensity = .5 + (zk === 5 ? 1.2 : .3); if (flash <= 0) { bolt.visible = false; hemi.intensity = .5; } }
       const fa = flag.geometry.attributes.position.array;
       for (let j = 0; j < fa.length; j += 3) fa[j + 2] = Math.sin(flagBase[j] * 4 - t * 5) * .12 * (flagBase[j] + .75);
       flag.geometry.attributes.position.needsUpdate = true;
@@ -1050,14 +1045,13 @@ diffuseColor.rgb *= tx * 1.15;`);
         const dist = Math.hypot(tx - v.g.position.x, tz - v.g.position.z);
         const gh = heightAt(v.g.position.x, v.g.position.z), wet = gh < WATER_Y;
         v.raft.visible = wet;
-        v.g.position.y = (wet ? WATER_Y + .1 + Math.sin(t * 2 + i) * .04 : gh) + (air ? Math.max(0, Math.sin(Math.min(1, Math.max(0, t - (v.jt || t)) * 1.6) * Math.PI)) * 1.0 : 0);
+        v.g.position.y = (wet ? WATER_Y + .1 + Math.sin(t * 2 + i) * .04 : gh) + (dist > .2 && !reduce ? Math.abs(Math.sin(t * 9 + i * 1.3)) * .35 : 0) + (air ? Math.max(0, Math.sin(Math.min(1, (t - (v.jt || t)) * 1.6) * Math.PI)) * 1.1 : 0);
         if (air && !v.jumping) { v.jumping = true; v.jt = t + i * .08; } if (!air) v.jumping = false;
+        v.g.rotation.y = Math.atan2(camera.position.x - v.g.position.x, camera.position.z - v.g.position.z);
         const talk = bubbles[i].until > t;
-        const faceCam = Math.atan2(camera.position.x - v.g.position.x, camera.position.z - v.g.position.z);
-        const want = dist > .3 && !talk ? Math.atan2(tx - v.g.position.x, tz - v.g.position.z) : faceCam;
-        let dd = want - v.g.rotation.y; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); v.g.rotation.y += dd * Math.min(1, dt * 7);
-        if (air) v.c.play("jump"); else if (dist > 2.2) v.c.play("run"); else if (dist > .3) v.c.play("walk", 1.1); else if (talk) v.c.play("wave"); else v.c.play("idle");
-        v.c.mixer.update(dt);
+        v.b.position.y = talk ? Math.abs(Math.sin(t * 6)) * .08 : Math.abs(Math.sin(t * 2 + i)) * .02;
+        if (!v.pockets) v.arms[1].rotation.z = talk ? 2.5 + Math.sin(t * 9) * .35 : .1;
+        const vs = dist > .15 ? Math.sin(t * 11 + i) * .6 : 0; v.legs[0].rotation.x = vs; v.legs[1].rotation.x = -vs;
       });
       vInit = true;
       sayTimer -= dt;
@@ -1093,7 +1087,7 @@ diffuseColor.rgb *= tx * 1.15;`);
       setOverview(v) { overview = v; },
       recall() { if (roam && !hop) { queue.length = 0; queue.push(heroIdx); queue.recall = true; } },
       setCheers(list) { cheerPool = list.slice(0, 15); },
-      burst() { burstT = reduce ? -1 : 0; waveT = 2.6; },
+      burst() { burstT = reduce ? -1 : 0; },
       cheerNow(cc) { say(freeVillager(), cc); sayTimer = 4.5; },
       get heroIdx() { return heroIdx; }
     });
@@ -1120,7 +1114,6 @@ diffuseColor.rgb *= tx * 1.15;`);
     else if (k !== lastZone && k > lastZone && k >= 1) showToast(ZONES[k].name.replace(" · ", " — "), ZONES[k].desc);
     lastZone = k;
   };
-  world.onReady = () => { first = true; render(); world.setCheers(cheers); };
   world.onZone = k => { $("zoneName").textContent = ZONES[k].name; $("zoneDesc").textContent = ZONES[k].desc; };
   world.onView = all => { $("viewAll").setAttribute("aria-pressed", String(all)); $("viewMe").setAttribute("aria-pressed", String(!all)); };
   world.onTile = i => { if (state.steps[i]) { viewing = i; $("confirmRow").hidden = true; render(); $("detail").scrollIntoView({ block: "nearest", behavior: "smooth" }); } };
