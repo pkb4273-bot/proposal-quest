@@ -1349,7 +1349,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     setCheers((data || []).map(r => cleanCheer(String(r.id), { text: r.text, name: r.name, at: r.created_at })).filter(Boolean));
   }
 
-  function saveLocal() { try { localStorage.setItem("proposal-quest", JSON.stringify(Object.assign({}, state, { skills }))); } catch (e) {} }
+  // 저장소 연결 전 임시 저장 (키를 바꾸면 예전 임시 기록은 무시됨)
+  const LOCAL_KEY = "proposal-quest-v2";
+  const SEED_STEPS = { 1: { name: "경남 시범솔루션 제안서", date: "2026-08-31" }, 2: { name: "울산 시범솔루션 제안서", date: "2026-10-02" }, 3: { name: "진주 AI도시 기본계획 제안서", date: "2026-10-19" } };
+  function saveLocal() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(Object.assign({}, state, { skills }))); } catch (e) {} }
   async function writeStep(i, rec) {
     if (rec) state.steps[i] = rec; else delete state.steps[i];
     render();
@@ -1377,7 +1380,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   });
   function startLocal(msg) {
     useLocal = true;
-    try { const s = JSON.parse(localStorage.getItem("proposal-quest") || "null"); if (s && s.steps) { state.lap = s.lap || 1; state.steps = s.steps; skills = cleanSkills(s.skills); } } catch (e) {}
+    state.lap = 1; state.steps = Object.assign({}, SEED_STEPS);
+    try { localStorage.removeItem("proposal-quest"); const s = JSON.parse(localStorage.getItem(LOCAL_KEY) || "null"); if (s && s.steps) { state.lap = s.lap || 1; state.steps = s.steps; skills = cleanSkills(s.skills); } } catch (e) {}
     $("storeNote").textContent = msg; render();
   }
 
